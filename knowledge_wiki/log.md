@@ -30,3 +30,19 @@
 ## [2026-08-17 17:35] update | t2
 ## [2026-08-17 17:35] delete | t1
 ## [2026-08-17 17:35] delete | t2
+## [2026-08-17 20:32] delete | standards-gdd
+## [2026-08-17 20:32] delete | pitfalls-gdd
+## [2026-08-17 20:32] delete | exemplars-gdd
+## [2026-08-17 20:36] distill-extract | vibecraft.md
+盘点: vibecraft.md
+## [2026-08-17 20:38] update | standards-gdd
+## [2026-08-17 20:38] update | pitfalls-gdd
+## [2026-08-17 20:38] update | exemplars-gdd
+## [2026-08-17 20:38] distill-synthesize | 1份盘点
+草稿: synthesize_draft.md → 生成3个wiki页面
+## [2026-08-17 22:41] review | GDD.md
+报告: GDD_评审报告_20260817_2241.md
+## [2026-08-18 00:08] review | GameDesignDocument.md
+报告: GameDesignDocument_评审报告_20260818_0008.md
+## [2026-08-18 01:05] review | GameDesignDocument.md
+报告: GameDesignDocument_评审报告_20260818_0105.md
