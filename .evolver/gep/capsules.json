@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "capsules": [
+    {
+      "type": "Capsule",
+      "id": "capsule_conversation_crewai-agent-llm-wiki_a66c1afbf1",
+      "schema_version": "1.12.1",
+      "trigger": [
+        "framework_design",
+        "knowledge_gating_bug_fixed",
+        "adversarial_review",
+        "two_phase_distillation",
+        "wiki_over_rag",
+        "conversation_distillation",
+        "visual_annotation",
+        "proxy_sync",
+        "test_verified"
+      ],
+      "gene": "gene_conversation_crewai-agent-llm-wiki_a66c1afbf1",
+      "summary": "基于 CrewAI 搭建文档评审类 Agent 框架的验证方法：(1) 小规模精炼语料下用 Karpathy LLM Wiki 模式（markdown 页面 + 关键词检索 + wiki_search/wiki_read 双工具）替代向量 RAG，规避 chunk 切碎原子条目、免嵌入成本、改完即生效；(2) 知识充分性门控（如反例库页面≥2且条目≥5才启用缺陷/亮点维度，不足时跳过并在报告中说明）必须在 Crew 组装函数内实时求值，禁止模块导入时缓存——踩坑：模块级常量导致同进程内先建库后评审时门控不翻转；(3) 对抗式评审：每维度审查员→质询员（红方）两轮，逐条 [推翻+理由] 或 [...",
+      "confidence": 0.9,
+      "blast_radius": {
+        "files": 1,
+        "lines": 1
+      },
+      "outcome": {
+        "status": "success",
+        "score": 0.82
+      },
+      "success_streak": 1,
+      "success_reason": "Conversation included reusable evidence and validation signals.",
+      "gene_library_version": null,
+      "env_fingerprint": {
+        "platform": "claude-code",
+        "source_thread": null
+      },
+      "source_type": "conversation_distillation",
+      "reused_asset_id": "",
+      "derivation_tokens": null,
+      "a2a": {
+        "eligible_to_broadcast": false
+      },
+      "content": "{\"platform\":\"claude-code\",\"source_thread\":null,\"artifacts\":[\"[REDACTED]\",\"[REDACTED]\",\"[REDACTED]\",\"[REDACTED]\",\"[REDACTED]\"],\"excerpt\":\"基于 CrewAI 搭建文档评审类 Agent 框架的验证方法：(1) 小规模精炼语料下用 Karpathy LLM Wiki 模式（markdown 页面 + 关键词检索 + wiki_search/wiki_read 双工具）替代向量 RAG，规避 chunk 切碎原子条目、免嵌入成本、改完即生效；(2) 知识充分性门控（如反例库页面≥2且条目≥5才启用缺陷/亮点维度，不足时跳过并在报告中说明）必须在 Crew 组装函数内实时求值，禁止模块导入时缓存——踩坑：模块级常量导致同进程内先建库后评审时门控不翻转；(3) 对抗式评审：每维度审查员→质询员（红方）两轮，逐条 [推翻+理由] 或 [确认+补强]，主审只采纳确认项，防止无依据指控与谄媚亮点；(4) 两阶段蒸馏：extract 逐份事实盘点（禁止评价）→ synthesize 跨文档归纳（样本量纪律：全有=必须/过半=推荐/仅1=可选；反例只来自人工标注判坏的设计），人工 .notes 粗标注是稀缺信号，AI 只展开不发明判断。 CrewAI 多Agent评审框架搭建：LLM Wiki知识库+对抗式评审+知识门控+两阶段蒸馏 创建游戏文档评审AI框架：知识库以wiki为来源，评审含一致性/深度/亮点/缺陷检查，缺陷与亮点在知识不足时放弃检查并在报告说明，需蒸馏GDD为知识库功能，评审需对抗组（同维度不同agent专门有理有据挑刺） 搭建了 gdd_review 框架（git e8bf7d6，非LLM路径全验证）：wiki.py 实现 Karpathy 模式（页面/index/log/lint/门控/关键词检索）；review.py 实现 4维度×(审查员+质询员红方)+主审，门控不足时跳过维度并在报告知识库状态节说明；distill.py 实现 extract→synthesize 两阶段蒸馏并自动写入wiki页面；gdd_tools.py 提供 wiki_search/wiki_read/gdd_read 按章节读工具。关键修复：门控从模块级常量改为 build_review_crew() 内实时求值（否则同进程先蒸馏后评审时门控不翻转，满库仍5任务）。验证证据：空库Crew=5任务（无缺陷/亮点维度），补2个pitfall页+2个exemplar页后=9任务，主审报告描述含门控说明；wiki检索/tag过滤/lint孤儿页检出均通过。 关键证据摘录： [需求] 知识库以wiki为来源；评审含一致性/深度/亮点/缺陷检查；缺陷与亮点在知识不足时放弃并在报告说明；需蒸馏功能；评审需对抗组。 [wiki选型依据] 用户问能否用Karpathy LLM Wiki替代CrewAI Knowledge向量RAG。分析：蒸馏产物是小而精的人工把关语料（撑死几十页），RAG语义检索优势场景没踩到；反例四元组（设计+\"}",
+      "diff": "",
+      "strategy": [
+        "LLM Wiki（markdown+关键词检索+搜读分离双工具）替代向量RAG用于小规模精炼语料",
+        "知识充分性门控在Crew组装时实时求值（勿模块级缓存）",
+        "对抗组：审查员→质询员红方两轮举证（[推翻+理由]/[确认+补强]），主审只采纳确认项",
+        "两阶段蒸馏分离事实盘点与跨文档归纳，人工标注为稀缺信号AI只展开不发明",
+        "知识不足的维度显式跳过并在报告说明，防止Agent用通用审美虚构发现"
+      ],
+      "execution_trace": [
+        {
+          "command": "空库Crew组装=5任务（门控跳过缺陷/亮点维度）断言通过",
+          "exit": 0
+        },
+        {
+          "command": "补2 pitfall页+2 exemplar页后Crew=9任务（门控翻转）断言通过",
+          "exit": 0
+        },
+        {
+          "command": "满库主审报告任务描述含门控说明断言通过",
+          "exit": 0
+        },
+        {
+          "command": "wiki.search('战力 购买')命中pitfalls-test；tag过滤检索预期0命中通过",
+          "exit": 0
+        },
+        {
+          "command": "wiki.lint()正确检出孤儿页",
+          "exit": 0
+        },
+        {
+          "command": "gdd_read按章节过滤（含'月卡'不含'核心玩法'）通过",
+          "exit": 0
+        },
+        {
+          "command": "CLI四命令（review/distill/lint/wiki）输出验证通过",
+          "exit": 0
+        },
+        {
+          "command": "git commit e8bf7d6 15文件提交",
+          "exit": 0
+        }
+      ],
+      "visibility": null,
+      "scope": null,
+      "cost_tier": null,
+      "pack_of": null,
+      "author": null,
+      "asset_id": "sha256:dd03d904d31eb0b3d6152ed49a7aa72387209662fbd217c6b34edf2dee9825b8"
+    }
+  ]
+}
