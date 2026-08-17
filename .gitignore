@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+reports/
+latest_kickoff_task_outputs.db
+.crewai_user.json

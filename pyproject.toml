@@ -1,0 +1,22 @@
+[project]
+name = "gdd-review"
+version = "0.1.0"
+description = "GDD review framework: wiki-based knowledge, adversarial multi-agent review, distillation"
+requires-python = ">=3.10,<3.14"
+dependencies = [
+    "crewai[tools]>=1.15.16,<2.0.0",
+    "pyyaml>=6.0",
+]
+
+[project.scripts]
+gdd-review = "gdd_review.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gdd_review"]
+
+[tool.crewai]
+type = "crew"
