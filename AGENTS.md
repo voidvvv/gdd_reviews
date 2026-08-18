@@ -11,7 +11,7 @@
 2. **评审**(`review`): 对用户传入的 GDD 做 4 维度对抗式评审(一致性/深度/缺陷/亮点),输出 markdown 报告
 3. **维护**(`lint`/`wiki`): 知识库健康检查与调试
 
-知识库是 **Karpathy LLM Wiki 模式**: 纯 markdown + 关键词检索,明确**不用**向量 RAG(设计依据见下"关键设计决策")。
+知识库是 **Karpathy LLM Wiki 模式**: 纯 markdown 为唯一事实源;检索默认走派生语义索引(向量 RAG,可选),未配置 embedding 时降级关键词。wiki→向量的同步收拢在 `embed` 一个命令里,评审流程只读(设计依据见下"关键设计决策"与 docs/rag-integration-analysis.md)。
 
 ## 技术栈与运行
 
@@ -24,6 +24,7 @@
 uv sync                              # 安装
 uv run gdd-review review <gdd路径>    # 评审 → reports/
 uv run gdd-review distill            # 蒸馏 raw_gdds/ → knowledge_wiki/
+uv run gdd-review embed              # 重建语义索引(需EMBEDDING_*;唯一文档嵌入时机)
 uv run gdd-review lint               # 知识库健康检查
 uv run gdd-review wiki [关键词]       # 调试: 看页面/门控/试检索(不调LLM)
 ```
@@ -32,7 +33,7 @@ uv run gdd-review wiki [关键词]       # 调试: 看页面/门控/试检索(�
 
 ```
 src/gdd_review/
-├── cli.py          # 入口 + load_dotenv;四个子命令路由
+├── cli.py          # 入口 + load_dotenv;五个子命令路由(review/distill/embed/lint/wiki)
 ├── wiki.py         # 知识库层(无LLM依赖,可独立测试)
 │   ├── WikiPage    #   frontmatter(title/tags/sources)+body;条目编号[S*][D*][P*][G*]
 │   ├── load_pages/save_page/delete_page
@@ -40,8 +41,12 @@ src/gdd_review/
 │   ├── knowledge_sufficiency(dim)  # ★ 门控: defect需pitfall页≥2且[P条目≥5;highlight需exemplar页≥2且条目≥5
 │   ├── rebuild_index/append_log    # index.md(内容目录)/log.md(时序日志,"## [ts] op | target"前缀约定)
 │   └── lint()      #   孤儿页/无编号条目/超大页(>20000字符)
+├── rag_sync.py     # 语义索引层(独立于wiki.py,评审流程不依赖它运行)
+│   ├── embedding_configured()   # EMBEDDING_*三项是否齐全(缺任一项=未启用)
+│   ├── rebuild_index()  # ★ embed命令本体: 删集合→整库重嵌入(全量重建,幂等)
+│   └── search()         # 只读语义检索(仅嵌入问题文本,几十token/次)
 ├── gdd_tools.py    # Agent工具(BaseTool子类)
-│   ├── WikiSearchTool   # wiki_search(query,tag) 搜片段
+│   ├── WikiSearchTool   # wiki_search(query,tag): 语义优先,未启用时降级关键词(tag过滤仅降级模式支持)
 │   ├── WikiReadTool     # wiki_read(page) 读全文 —— 搜读分离,Agent多跳迭代
 │   └── GddReadTool      # gdd_read(section?) 读待审GDD,按markdown标题切块过滤
 │                        # ★ GDD路径从环境变量 GDD_UNDER_REVIEW 读取(cli在kickoff前设置)
@@ -57,14 +62,18 @@ raw_gdds/         蒸馏输入(不可变);<名>.notes=人工粗标注(每行"章
 extracted/        单文档盘点中间产物(审计链,勿删)
 drafts/           synthesize草稿(人工复核对象)
 knowledge_wiki/   知识库;index.md/log.md是特殊文件,load_pages会跳过
+kb_storage/       语义索引落盘(gitignore;由embed命令生成,可随时删除重建)
 reports/          评审报告输出(gitignore)
 sample_gdds/      示例GDD: bad(埋了矛盾+含糊+无上限付费)/good(规范)各一
 ```
 
 ## 关键设计决策(改代码前先理解"为什么")
 
-### 1. Wiki 而非向量 RAG
-评审知识是小而精的人工把关语料。反例四元组(设计+后果+检查动作)是原子单位,向量切块会切碎;markdown 即知识,人工可复核可 git,改完即生效。**不要**引入 embedding/向量库依赖——若未来语料涨到几百页,正确路径是 wiki 做事实源+派生 RAG 索引,而不是替换。
+### 1. Wiki 为事实源 + 派生语义索引(而非向量库做主存储)
+评审知识是小而精的人工把关语料。反例四元组(设计+后果+检查动作)是原子单位,向量切块会切碎;markdown 即知识,人工可复核可 git,改完即生效。因此 wiki markdown 是唯一事实源,向量索引只是只读投影。已按 docs/rag-integration-analysis.md 落地三条铁律:
+- **嵌入与评审分离**: 文档 embedding 只发生在 `gdd-review embed`(手动触发);评审流程只读。Agent 工具面不暴露 add 能力,杜绝污染检索源
+- **全量重建而非增量**: crewAI 底层"文档更新后旧 chunk 残留"缺陷(见分析文档1.5节)使增量更新无法清理旧版本;wiki 规模小,删集合→重嵌入最便宜且永远干净
+- **优雅降级**: EMBEDDING_*未配置时 WikiSearchTool 自动降级关键词检索,框架开箱即用。降级判定在运行时(embedding_configured()),**不要**缓存到模块级(同门控坑)
 
 ### 2. 知识充分性门控(knowledge_sufficiency)
 缺陷/亮点维度在知识不足时**跳过整个维度的 Agent 评审**(不是降级执行),主审报告"知识库状态"一节原文说明原因。目的: 防止 Agent 在无依据时用通用审美虚构发现。
@@ -101,8 +110,12 @@ sample_gdds/      示例GDD: bad(埋了矛盾+含糊+无上限付费)/good(规�
 ### 加一类知识
 新建 wiki 页面 `tags: [新tag]`,条目用新前缀编号(如 `[C1]`);需要门控就同步改 `knowledge_sufficiency`。检索无需改动(search 按全文关键词)。
 
-### 改 LLM 供应商
-只动 `.env` 三个变量(OPENAI_API_KEY/OPENAI_BASE_URL/OPENAI_MODEL),任何 OpenAI 兼容端点。代码无需改。注意 `llm.py` 的 `preflight_llm_check` 已处理"平台业务错误返回 HTTP 200+空 choices"的情况(智谱特性)。
+### 改 LLM / Embedding 供应商
+`.env` 两组独立变量,任何 OpenAI 兼容端点,代码无需改:
+- Agent 模型: OPENAI_API_KEY/OPENAI_BASE_URL/OPENAI_MODEL(必填)
+- Embedding: EMBEDDING_API_KEY/EMBEDDING_BASE_URL/EMBEDDING_MODEL(可选,缺省=关键词检索)
+
+模板见 `.env.example`(git管理,只讲配置方法不含真实值);用户真实配置写 `.env`(gitignore)。注意 `llm.py` 的 `preflight_llm_check` 已处理"平台业务错误返回 HTTP 200+空 choices"的情况(智谱特性)。换 embedding 模型后必须重跑 `gdd-review embed`(维度不同会维度不匹配)。
 
 ## 验证模式(本项目无 pytest,用断言脚本)
 
@@ -124,8 +137,9 @@ import os; os.environ['GDD_UNDER_REVIEW']='sample_gdds/sample_bad_gdd.md'
 from gdd_review.review import build_review_crew
 assert len(build_review_crew().tasks) == 5"
 
-# 3. CLI冒烟
+# 3. CLI冒烟(含embed未配置时的降级提示)
 uv run gdd-review lint && uv run gdd-review wiki
+uv run gdd-review embed; [ $? -eq 1 ] && echo "embed未配置保护 OK"
 ```
 
 调 LLM 的真链路(蒸馏/评审)需要有效 key 和真实 token 消耗,由用户手动跑。

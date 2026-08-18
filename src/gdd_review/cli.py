@@ -31,6 +31,25 @@ def main() -> None:
 
         run_distill()
 
+    elif cmd == "embed":
+        # 语义索引构建(手动触发,唯一产生文档embedding费用的命令)
+        from gdd_review import rag_sync
+
+        if not rag_sync.embedding_configured():
+            raise SystemExit(
+                "✗ 语义检索未配置\n"
+                "  请在 .env 中设置 EMBEDDING_API_KEY / EMBEDDING_BASE_URL / EMBEDDING_MODEL\n"
+                "  (模板见 .env.example; 不配置则评审继续使用关键词检索)"
+            )
+        from gdd_review.llm import preflight_llm_check
+
+        preflight_llm_check()
+        stats = rag_sync.rebuild_index()
+        print(
+            f"✓ 语义索引已重建: {stats['pages']}个页面 → {stats['chunks']}个chunk"
+            f" (库: {rag_sync.KB_DIR})"
+        )
+
     elif cmd == "lint":
         from gdd_review import wiki
 
@@ -69,6 +88,7 @@ def _usage() -> None:
         "用法:\n"
         "  gdd-review review <gdd路径>   评审一份GDD,输出报告到 reports/\n"
         "  gdd-review distill            蒸馏 raw_gdds/ 下全部GDD进知识库\n"
+        "  gdd-review embed              重建语义索引(知识库→向量库,需EMBEDDING_*配置)\n"
         "  gdd-review lint               知识库健康检查\n"
         "  gdd-review wiki [关键词]       查看知识库/试检索(不调LLM)\n"
     )

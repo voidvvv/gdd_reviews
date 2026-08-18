@@ -26,17 +26,22 @@
 cd gdd_review
 uv sync                     # 安装依赖(需 Python >=3.10 <3.14, uv 包管理)
 
-# 配置大模型(默认智谱 BigModel;也可换任何 OpenAI 兼容端点)
-echo 'OPENAI_API_KEY=你的key' >> .env
+# 配置: 复制模板 → 填入你真实的 url 与 key(.env 已被 gitignore,不会入库)
+cp .env.example .env
 ```
 
-`.env` 可配置项：
+`.env` 可配置项（模板 `.env.example` 内含逐项说明）：
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `OPENAI_API_KEY` | （空，必填） | API Key，智谱获取：https://open.bigmodel.cn/usercenter/apikeys |
-| `OPENAI_BASE_URL` | `https://open.bigmodel.cn/api/coding/paas/v4` | OpenAI 兼容端点 |
-| `OPENAI_MODEL` | `GLM-5.2` | 模型名（区分大小写） |
+| `OPENAI_API_KEY` | （空，必填） | Agent 模型（评审/蒸馏）的 API Key |
+| `OPENAI_BASE_URL` | （空，必填） | Agent 模型的 OpenAI 兼容端点 |
+| `OPENAI_MODEL` | （空，必填） | Agent 模型名（区分大小写） |
+| `EMBEDDING_API_KEY` | （空，可选） | Embedding 模型的 API Key，语义检索用 |
+| `EMBEDDING_BASE_URL` | （空，可选） | Embedding 的 OpenAI 兼容端点 |
+| `EMBEDDING_MODEL` | （空，可选） | Embedding 模型名 |
+
+两组配置互相独立，可用不同供应商（都要求 OpenAI 兼容协议）。**不配置 `EMBEDDING_*` 时框架自动降级为关键词检索，功能不受影响**；配置后运行一次 `gdd-review embed` 即启用语义检索。
 
 ### 2. 蒸馏：把真实 GDD 变成知识库
 
@@ -100,9 +105,10 @@ uv run gdd-review review /path/to/待评审GDD.md
 uv run gdd-review lint           # 健康检查: 孤儿页/无编号条目/超大页
 uv run gdd-review wiki           # 查看页面数与门控结论(不调LLM)
 uv run gdd-review wiki 抽卡 保底  # 试检索,看关键词命中(不调LLM)
+uv run gdd-review embed          # 重建语义索引(需EMBEDDING_*配置;唯一的文档嵌入时机)
 ```
 
-直接编辑 `knowledge_wiki/*.md` 即可修订知识——保存即生效，无需重建任何索引。
+直接编辑 `knowledge_wiki/*.md` 即可修订知识——保存即生效。关键词检索立刻反映修改；语义检索需重跑一次 `embed`（全量重建，幂等，几分钱/次）。
 
 ## 工作原理
 
@@ -127,18 +133,18 @@ uv run gdd-review wiki 抽卡 保底  # 试检索,看关键词命中(不调LLM)
 
 | 工具 | 作用 |
 |------|------|
-| `wiki_search(query, tag)` | 关键词检索知识库，返回命中页面名+片段；支持 tag 过滤（pitfall/standard/exemplar） |
+| `wiki_search(query, tag)` | 检索知识库，返回命中页面名+片段。默认语义检索（向量匹配，同义表述可召回，如"概率上限"能搜到"保底"）；未配置 `EMBEDDING_*` 时自动降级关键词检索（此模式支持 tag 过滤） |
 | `wiki_read(page)` | 读取页面全文（完整条目+检查动作） |
 | `gdd_read(section?)` | 读取待评审 GDD；传 section 按标题关键词只读某章（长文档分章读，防上下文溢出） |
 
-### 为什么用 Wiki 而不是向量 RAG
+### 知识检索：wiki 为事实源 + 派生语义索引
 
-评审知识是**小而精的人工把关语料**（几十页以内），不是海量原文：
+评审知识是**小而精的人工把关语料**（几十页以内），不是海量原文，因此架构上 wiki markdown 永远是唯一事实源，语义索引只是它的**只读投影**（设计分析见 `docs/rag-integration-analysis.md`）：
 
-- 反例四元组（设计+后果+检查动作）是原子单位——向量切块会把它切碎，检索到"这是反模式"却丢了"该查什么"
+- 反例四元组（设计+后果+检查动作）是原子单位——检索到片段后必须 `wiki_read` 读原页核实编号，质询员的"核实 [P*] 条目真实存在"流程不被向量切块破坏
 - markdown 即知识：人工复核、修订、git 版本管理都是原生能力，改完即生效
-- 零基建：不需要 embedder 配置、建库脚本、向量库落盘运维
-- 检索是关键词匹配，Agent 靠"换同义词重试 + 搜读分离"多跳迭代弥补语义缺口
+- **嵌入与评审分离**：文档 embedding 只发生在手动执行 `gdd-review embed` 时（全量重建、幂等）；评审流程只读向量库，每次检索仅嵌入问题本身（几十 token），重复评审零文档嵌入费用
+- 不配置 `EMBEDDING_*` 时自动降级关键词检索，框架开箱即用；`kb_storage/`（向量库落盘）已 gitignore
 
 ## 目录结构
 
@@ -150,9 +156,12 @@ gdd_review/
 ├── knowledge_wiki/          # ★ 知识库(markdown,git管理)
 ├── reports/                 # 评审报告输出
 ├── sample_gdds/             # 示例GDD(坏文档含故意缺陷/好文档各一,可试跑)
+├── kb_storage/              # 语义索引落盘(gitignore; embed命令生成)
+├── .env.example             # 环境变量模板(git管理; 复制为.env后填真实key)
 └── src/gdd_review/
-    ├── cli.py               # CLI入口: review/distill/lint/wiki
+    ├── cli.py               # CLI入口: review/distill/embed/lint/wiki
     ├── wiki.py              # wiki层: 页面/检索/门控/index/log/lint
+    ├── rag_sync.py          # 语义索引层: embed命令与只读语义检索
     ├── gdd_tools.py         # Agent工具: wiki_search/wiki_read/gdd_read
     ├── review.py            # 评审Crew: 4维度×对抗组+主审
     ├── distill.py           # 蒸馏Crew: extract→synthesize
@@ -179,6 +188,8 @@ gdd_review/
 - **评审报告里缺陷/亮点维度显示"跳过"** → 知识库不足门控阈值，先跑 `distill` 并复核 `pitfalls-gdd.md`/`exemplars-gdd.md`
 - **Agent 检索不到明明有的知识** → 关键词匹配的固有短板：写页面时把同义词写进正文（如"关键词: 保底/抽卡补偿/概率"），或让页面标题更贴近评审时的提问用词
 - **蒸馏质量不稳** → 检查 `.notes` 标注是否提供了足够信号；无标注的文档 AI 只能做事实盘点，判断质量取决于 synthesize 阶段的跨文档对比
+- **wiki_search 输出带"关键词模式"提示** → 语义检索未启用：在 `.env` 配置 `EMBEDDING_*` 三项后运行 `uv run gdd-review embed`
+- **改了 wiki 页面但语义检索结果还是旧的** → 重跑 `uv run gdd-review embed`（语义索引是 wiki 的快照，不会自动同步）
 
 ## 诚实的边界
 

@@ -2,6 +2,8 @@
 __pycache__/
 *.pyc
 .env
+.env.local
 reports/
 latest_kickoff_task_outputs.db
 .crewai_user.json
+kb_storage/

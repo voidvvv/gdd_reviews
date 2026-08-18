@@ -11,28 +11,59 @@ from gdd_review import wiki
 
 
 class WikiSearchInput(BaseModel):
-    query: str = Field(..., description="关键词,空格分隔,如 '抽卡 保底'")
+    query: str = Field(..., description="检索问题或关键词,如 '抽卡保底的设计陷阱'")
     tag: str | None = Field(
-        None, description="按tag过滤: pitfall(反例)/standard(标准)/exemplar(范例);留空搜全部"
+        None,
+        description="按tag过滤: pitfall(反例)/standard(标准)/exemplar(范例);留空搜全部."
+        "注意: 仅关键词检索模式支持tag过滤",
     )
 
 
 class WikiSearchTool(BaseTool):
     name: str = "wiki_search"
     description: str = (
-        "在GDD评审知识库按关键词检索。这是关键词匹配——搜不到就换同义词重试"
-        "(如'保底'不行试'概率''抽卡'),或去掉tag过滤扩大范围。"
+        "在GDD评审知识库做语义检索(向量匹配,同义表述也能召回,如'概率上限'能搜到'保底')。"
         "命中后用 wiki_read 读该页全文获取完整条目和检查动作。"
+        "搜不到时换一种问法重试,仍无命中则如实返回无相关标准。"
     )
     args_schema: type[BaseModel] = WikiSearchInput
 
     def _run(self, query: str, tag: str | None = None) -> str:
+        # 语义检索优先; 未配置embedding或向量库为空时降级关键词检索
+        if tag is None:
+            semantic = _semantic_search(query)
+            if semantic is not None:
+                if not semantic:
+                    return "无命中。建议: 换一种问法重试(语义检索已启用,同义表述也应能命中)。"
+                return "\n\n".join(
+                    f"## {h['page']} (来源:{h['source']}, 相关度{h['score']:.2f})\n"
+                    f"{h['content'][:400]}"
+                    for h in semantic
+                )
         hits = wiki.search(query, tag=tag)
         if not hits:
             return "无命中。建议: 换同义词/减少关键词/去掉tag过滤后重试。"
-        return "\n\n".join(
+        mode_note = (
+            "(关键词模式: 语义检索未启用,配置EMBEDDING_*后运行embed升级)\n"
+            if tag is None
+            else ""
+        )
+        return mode_note + "\n\n".join(
             f"## {h['name']} (tags:{','.join(h['tags'])})\n{h['snippet']}" for h in hits
         )
+
+
+def _semantic_search(query: str) -> list[dict] | None:
+    """语义检索向量库. 返回 None 表示不可用(降级关键词), 空列表表示无命中."""
+    from gdd_review import rag_sync
+
+    if not rag_sync.embedding_configured():
+        return None
+    try:
+        return rag_sync.search(query)
+    except Exception:
+        # 向量库未初始化/连接失败等 → 降级关键词, 不阻塞评审
+        return None
 
 
 class WikiReadInput(BaseModel):
